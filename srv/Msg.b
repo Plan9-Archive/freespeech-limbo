@@ -77,10 +77,11 @@ server(tchan: chan of ref Tmsg, srv: ref Styxserver, tree: ref Tree)
 				data := array of byte "TODO: message body here";
 				srv.reply(styxservers->readbytes(m, data));
 			* =>
-				srv.default(gm);
+				srv.default(m);
 			}
-		* => srv.default(gm);
+		* => srv.default(m);
 		}
 	}
 	tree.quit();
 }
+

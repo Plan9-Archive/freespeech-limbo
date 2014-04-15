@@ -96,15 +96,18 @@ server(tchan: chan of ref Tmsg, srv: ref Styxserver, tree: ref Tree)
 				data := array of byte "TODO: list of messages here";
 				srv.reply(styxservers->readbytes(m, data));
 			Qnewmsg =>
-				tree.create(Qroot, dir("msg" +string readerId, 8r777|Sys->DMDIR, Qmsgdir)); 
+				tree.create(Qroot,
+                            dir("msg" +string readerId,
+                            8r777|Sys->DMDIR,
+                            Qmsgdir)); 
 				data := array of byte string readerId;
 				readerId++;
-				#srv.default(gm);
+				#srv.default(m);
 				srv.reply(styxservers->readbytes(m, data));
 			* =>
-				srv.default(gm);
+				srv.default(m);
 			}
-		* => srv.default(gm);
+		* => srv.default(m);
 		}
 	}
 	tree.quit();
