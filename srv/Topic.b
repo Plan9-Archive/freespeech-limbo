@@ -2,13 +2,14 @@ implement Topic;
 
 include "sys.m";
 	sys : Sys;
+	Qid, nulldir, OTRUNC: import sys;
 include "draw.m";
 include "styx.m";
 	styx : Styx;
 	Tmsg, Rmsg : import styx;
 include "styxservers.m";
 	styxservers : Styxservers;
-	Styxserver, Navigator : import styxservers;
+	Styxserver, Navigator, Fid : import styxservers;
 	nametree : Nametree;
 	Tree : import nametree;
 
@@ -19,7 +20,6 @@ Topic : module
 
 Qroot, Qctl, Qmsgs, Qnewmsg, Qmsgdir : con big iota;
 
-readerId : int;
 uid : string;
 
 init (nil: ref Draw->Context, argv: list of string)
@@ -32,16 +32,15 @@ init (nil: ref Draw->Context, argv: list of string)
 	nametree = load Nametree Nametree->PATH;
 	nametree->init();
 
+	getuid();
 	(tree, treeop) := nametree->start();
-	tree.create(Qroot, dir(".", 8r555|Sys->DMDIR, Qroot));
-	tree.create(Qroot, dir("ctl", 8r666, Qctl));
+	tree.create(Qroot, dir(".", 8r777|Sys->DMDIR, Qroot));
+	tree.create(Qroot, dir("ctl", 8r666|sys->OTRUNC, Qctl));
 	tree.create(Qroot, dir("msgs", 8r666, Qmsgs));
 	tree.create(Qroot, dir("newmsg", 8r666, Qnewmsg));
 
 	nav := Navigator.new(treeop);
 	(tchan, srv) := Styxserver.new(sys->fildes(0), nav, Qroot);
-	readerId = 0;
-	getuid();
 	spawn server(tchan, srv, tree);
 }
 
@@ -70,20 +69,23 @@ dir(name: string, perm: int, qid: big): Sys->Dir
 
 server(tchan: chan of ref Tmsg, srv: ref Styxserver, tree: ref Tree)
 {
+	readerId : int = 0;
+
 	sys->pctl(Sys->NEWPGRP, nil);
 
 	while((gm := <-tchan) != nil){
 		pick m := gm{
+		Wstat => # workaround for linux v9fs O_TRUNC issue
+			srv.reply(ref Rmsg.Wstat(m.tag));
 		Readerror =>
 			break;
 		Flush =>
-#			cancelpending(tm.tag);
-			srv.reply(ref Rmsg.Flush(gm.tag));
+			srv.reply(ref Rmsg.Flush(m.tag));
 		Write =>
 			(c, err) := srv.canwrite(m);
 			if (c == nil){
 				srv.reply(ref Rmsg.Error(m.tag, err));
-			} else if (c.path == Qctl){
+			} else{
 				srv.reply(ref Rmsg.Write(m.tag, len m.data));
 			}
 		Read =>
@@ -96,20 +98,20 @@ server(tchan: chan of ref Tmsg, srv: ref Styxserver, tree: ref Tree)
 				data := array of byte "TODO: list of messages here";
 				srv.reply(styxservers->readbytes(m, data));
 			Qnewmsg =>
-				tree.create(Qroot,
-                            dir("msg" +string readerId,
-                            8r777|Sys->DMDIR,
-                            Qmsgdir)); 
-				data := array of byte string readerId;
-				readerId++;
-				#srv.default(m);
+				data := array of byte string "from: \ndate: \n";
 				srv.reply(styxservers->readbytes(m, data));
 			* =>
-				srv.default(m);
+				srv.default(gm);
 			}
-		* => srv.default(m);
+		* => srv.default(gm);
 		}
 	}
 	tree.quit();
+}
+
+newmsgclient(fid: int, name: string)
+{
+    #writemsgclients(fid, nil, "+++ " + name + " has arrived");
+    #msgclients = ref Msgclient(fid, name, keptmsg, nil, msgclients);
 }
 
